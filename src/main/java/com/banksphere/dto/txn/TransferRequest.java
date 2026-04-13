@@ -2,14 +2,20 @@ package com.banksphere.dto.txn;
 
 import jakarta.validation.constraints.*;
 import lombok.Data;
-
 import java.math.BigDecimal;
-import java.util.UUID;
+
 @Data
 public class TransferRequest {
-    @NotNull private UUID fromAccountId;
-    @NotNull private UUID toAccountId;
-    @NotBlank private String txnRef;
-    @NotNull @DecimalMin("0.01") private BigDecimal amount;
+
+    @NotBlank(message = "Source account number is required")
+    private String fromAccountNo;
+
+    @NotBlank(message = "Destination account number is required")
+    private String toAccountNo;
+
+    @NotNull(message = "Transfer amount is required")
+    @DecimalMin(value = "0.01", message = "Amount must be at least 0.01")
+    private BigDecimal amount;
+
     private String narration;
 }

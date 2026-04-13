@@ -15,8 +15,9 @@ public class TxnResponse {
     private String txnType;
     private String status;
     private BigDecimal amount;
-    private UUID fromAccountId;
-    private UUID toAccountId;
+    private String fromAccountNo;
+    private String toAccountNo;
+    private String narration; // <--- ADD THIS FIELD
     private Instant requestedAt;
     private Instant postedAt;
     private String failureReason;

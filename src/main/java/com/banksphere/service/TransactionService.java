@@ -11,5 +11,5 @@ public interface TransactionService {
     TxnResponse withdraw(WithdrawRequest request);
     TxnResponse transfer(TransferRequest request);
 
-    List<TxnResponse> accountTransactions(UUID accountId, LocalDate from, LocalDate to, String type);
+    List<TxnResponse> getStatement(String accountNo, String interval, LocalDate from, LocalDate to, String type);
 }

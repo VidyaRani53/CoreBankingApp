@@ -7,11 +7,13 @@ import com.banksphere.repository.*;
 import com.banksphere.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.*;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,272 +25,208 @@ public class TransactionServiceImpl implements TransactionService {
     private final TransactionRepository transactionRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
     private final AccountRepository accountRepository;
-
     private final UserRepository userRepository;
     private final CustomerRepository customerRepository;
 
     @Override
     @Transactional
     public TxnResponse deposit(DepositRequest request) {
-        Transaction existing = transactionRepository.findByTxnRef(request.getTxnRef()).orElse(null);
-        if (existing != null) return toResponse(existing);
-
         User user = getCurrentUser();
-        Account account = loadOwnedAccount(user, request.getAccountId());
+
+        // Staff usually performs deposits, but we allow self-deposits for testing
+        Account account = accountRepository.findByAccountNo(request.getAccountNo())
+                .orElseThrow(() -> new RuntimeException("Account not found: " + request.getAccountNo()));
 
         validateAccountActive(account);
         BigDecimal amount = validateAmount(request.getAmount());
 
-        Transaction txn = transactionRepository.save(Transaction.builder()
-                .txnRef(request.getTxnRef())
+        String txnRef = generateTxnRef(account.getAccountNo(), "DEP");
+
+        Transaction txn = Transaction.builder()
+                .txnRef(txnRef)
                 .txnType(TxnType.DEPOSIT)
                 .status(TxnStatus.PENDING)
                 .amount(amount)
-                .currency("INR")
                 .toAccountId(account.getId())
                 .initiatedBy(user.getId())
-                .channel(TxnChannel.PORTAL)
                 .narration(request.getNarration())
                 .requestedAt(Instant.now())
-                .build());
+                .build();
 
-        // post
         account.setAvailableBalance(account.getAvailableBalance().add(amount));
         accountRepository.save(account);
 
-        ledgerEntryRepository.save(LedgerEntry.builder()
-                .transactionId(txn.getId())
-                .accountId(account.getId())
-                .entryType(LedgerEntryType.CREDIT)
-                .amount(amount)
-                .runningBalance(account.getAvailableBalance())
-                .postedAt(Instant.now())
-                .build());
+        Transaction saved = transactionRepository.save(txn);
+        createLedgerEntry(saved, account.getId(), LedgerEntryType.CREDIT, amount, account.getAvailableBalance());
 
-        txn.setStatus(TxnStatus.POSTED);
-        txn.setPostedAt(Instant.now());
-        transactionRepository.save(txn);
+        saved.setStatus(TxnStatus.POSTED);
+        saved.setPostedAt(Instant.now());
 
-        log.info("Deposit posted: txnRef={}, accountId={}, amount={}", txn.getTxnRef(), account.getId(), amount);
-        return toResponse(txn);
+        return toResponse(transactionRepository.save(saved));
     }
 
     @Override
-    @Transactional
     public TxnResponse withdraw(WithdrawRequest request) {
-        Transaction existing = transactionRepository.findByTxnRef(request.getTxnRef()).orElse(null);
-        if (existing != null) return toResponse(existing);
-
-        User user = getCurrentUser();
-        Account account = loadOwnedAccount(user, request.getAccountId());
-
-        validateAccountActive(account);
-        BigDecimal amount = validateAmount(request.getAmount());
-
-        if (account.getAvailableBalance().compareTo(amount) < 0) {
-            Transaction failed = transactionRepository.save(Transaction.builder()
-                    .txnRef(request.getTxnRef())
-                    .txnType(TxnType.WITHDRAWAL)
-                    .status(TxnStatus.FAILED)
-                    .amount(amount)
-                    .currency("INR")
-                    .fromAccountId(account.getId())
-                    .initiatedBy(user.getId())
-                    .channel(TxnChannel.PORTAL)
-                    .narration(request.getNarration())
-                    .failureReason("Insufficient funds")
-                    .requestedAt(Instant.now())
-                    .build());
-            return toResponse(failed);
-        }
-
-        Transaction txn = transactionRepository.save(Transaction.builder()
-                .txnRef(request.getTxnRef())
-                .txnType(TxnType.WITHDRAWAL)
-                .status(TxnStatus.PENDING)
-                .amount(amount)
-                .currency("INR")
-                .fromAccountId(account.getId())
-                .initiatedBy(user.getId())
-                .channel(TxnChannel.PORTAL)
-                .narration(request.getNarration())
-                .requestedAt(Instant.now())
-                .build());
-
-        account.setAvailableBalance(account.getAvailableBalance().subtract(amount));
-        accountRepository.save(account);
-
-        ledgerEntryRepository.save(LedgerEntry.builder()
-                .transactionId(txn.getId())
-                .accountId(account.getId())
-                .entryType(LedgerEntryType.DEBIT)
-                .amount(amount)
-                .runningBalance(account.getAvailableBalance())
-                .postedAt(Instant.now())
-                .build());
-
-        txn.setStatus(TxnStatus.POSTED);
-        txn.setPostedAt(Instant.now());
-        transactionRepository.save(txn);
-
-        log.info("Withdrawal posted: txnRef={}, accountId={}, amount={}", txn.getTxnRef(), account.getId(), amount);
-        return toResponse(txn);
+        return null;
     }
 
     @Override
     @Transactional
     public TxnResponse transfer(TransferRequest request) {
-        if (request.getFromAccountId().equals(request.getToAccountId())) {
-            throw new RuntimeException("fromAccountId and toAccountId cannot be same");
+        User user = getCurrentUser();
+
+        Account from = accountRepository.findByAccountNo(request.getFromAccountNo())
+                .orElseThrow(() -> new RuntimeException("Source account not found"));
+        Account to = accountRepository.findByAccountNo(request.getToAccountNo())
+                .orElseThrow(() -> new RuntimeException("Destination account not found"));
+
+        if (from.getAccountNo().equals(to.getAccountNo())) {
+            throw new RuntimeException("Cannot transfer to the same account");
         }
 
-        Transaction existing = transactionRepository.findByTxnRef(request.getTxnRef()).orElse(null);
-        if (existing != null) return toResponse(existing);
-
-        User user = getCurrentUser();
-        Account from = loadOwnedAccount(user, request.getFromAccountId());
-        Account to = accountRepository.findById(request.getToAccountId())
-                .orElseThrow(() -> new RuntimeException("To account not found"));
+        // Security: Customers can only transfer from their own accounts
+        if ("CUSTOMER".equalsIgnoreCase(user.getUserType())) {
+            validateOwnership(user, from);
+        }
 
         validateAccountActive(from);
         validateAccountActive(to);
-
         BigDecimal amount = validateAmount(request.getAmount());
 
-        if (from.getAvailableBalance().compareTo(amount) < 0) {
-            Transaction failed = transactionRepository.save(Transaction.builder()
-                    .txnRef(request.getTxnRef())
-                    .txnType(TxnType.TRANSFER)
-                    .status(TxnStatus.FAILED)
-                    .amount(amount)
-                    .currency("INR")
-                    .fromAccountId(from.getId())
-                    .toAccountId(to.getId())
-                    .initiatedBy(user.getId())
-                    .channel(TxnChannel.PORTAL)
-                    .narration(request.getNarration())
-                    .failureReason("Insufficient funds")
-                    .requestedAt(Instant.now())
-                    .build());
-            return toResponse(failed);
-        }
+        String txnRef = generateTxnRef(from.getAccountNo(), "TRF");
 
-        Transaction txn = transactionRepository.save(Transaction.builder()
-                .txnRef(request.getTxnRef())
+        Transaction txn = Transaction.builder()
+                .txnRef(txnRef)
                 .txnType(TxnType.TRANSFER)
                 .status(TxnStatus.PENDING)
                 .amount(amount)
-                .currency("INR")
                 .fromAccountId(from.getId())
                 .toAccountId(to.getId())
                 .initiatedBy(user.getId())
-                .channel(TxnChannel.PORTAL)
                 .narration(request.getNarration())
                 .requestedAt(Instant.now())
-                .build());
+                .build();
 
-        // Important: update balances first, then ledger with running balance
+        if (from.getAvailableBalance().compareTo(amount) < 0) {
+            txn.setStatus(TxnStatus.FAILED);
+            txn.setFailureReason("Insufficient funds");
+            return toResponse(transactionRepository.save(txn));
+        }
+
         from.setAvailableBalance(from.getAvailableBalance().subtract(amount));
         to.setAvailableBalance(to.getAvailableBalance().add(amount));
-
         accountRepository.save(from);
         accountRepository.save(to);
 
-        Instant postedAt = Instant.now();
-
-        ledgerEntryRepository.save(LedgerEntry.builder()
-                .transactionId(txn.getId())
-                .accountId(from.getId())
-                .entryType(LedgerEntryType.DEBIT)
-                .amount(amount)
-                .runningBalance(from.getAvailableBalance())
-                .postedAt(postedAt)
-                .build());
-
-        ledgerEntryRepository.save(LedgerEntry.builder()
-                .transactionId(txn.getId())
-                .accountId(to.getId())
-                .entryType(LedgerEntryType.CREDIT)
-                .amount(amount)
-                .runningBalance(to.getAvailableBalance())
-                .postedAt(postedAt)
-                .build());
-
+        Instant now = Instant.now();
         txn.setStatus(TxnStatus.POSTED);
-        txn.setPostedAt(postedAt);
-        transactionRepository.save(txn);
+        txn.setPostedAt(now);
+        Transaction saved = transactionRepository.save(txn);
 
-        log.info("Transfer posted: txnRef={}, from={}, to={}, amount={}",
-                txn.getTxnRef(), from.getId(), to.getId(), amount);
+        createLedgerEntry(saved, from.getId(), LedgerEntryType.DEBIT, amount, from.getAvailableBalance());
+        createLedgerEntry(saved, to.getId(), LedgerEntryType.CREDIT, amount, to.getAvailableBalance());
 
-        return toResponse(txn);
+        return toResponse(saved);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<TxnResponse> accountTransactions(UUID accountId, LocalDate from, LocalDate to, String type) {
+    public List<TxnResponse> getStatement(String accountNo, String interval, LocalDate from, LocalDate to, String type) {
         User user = getCurrentUser();
-        Account owned = loadOwnedAccount(user, accountId);
+        Account account = accountRepository.findByAccountNo(accountNo)
+                .orElseThrow(() -> new RuntimeException("Account not found"));
 
-        Instant fromTs = from.atStartOfDay(ZoneId.systemDefault()).toInstant();
-        Instant toTs = to.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().minusMillis(1);
+        // Security check
+        if ("CUSTOMER".equalsIgnoreCase(user.getUserType())) {
+            validateOwnership(user, account);
+        }
 
-        List<Transaction> txns = transactionRepository
-                .findByFromAccountIdOrToAccountIdAndRequestedAtBetweenOrderByRequestedAtDesc(
-                        owned.getId(), owned.getId(), fromTs, toTs);
+        // Calculate Date Range
+        Instant startTs;
+        Instant endTs = (to != null) ? to.atTime(LocalTime.MAX).atZone(ZoneId.systemDefault()).toInstant() : Instant.now();
+
+        if (interval != null && !interval.isBlank()) {
+            startTs = switch (interval.toUpperCase()) {
+                case "3MONTH" -> LocalDate.now().minusMonths(3).atStartOfDay(ZoneId.systemDefault()).toInstant();
+                case "6MONTH" -> LocalDate.now().minusMonths(6).atStartOfDay(ZoneId.systemDefault()).toInstant();
+                case "1YEAR" -> LocalDate.now().minusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+                default -> from != null ? from.atStartOfDay(ZoneId.systemDefault()).toInstant() :
+                        LocalDate.now().minusMonths(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+            };
+        } else {
+            startTs = (from != null) ? from.atStartOfDay(ZoneId.systemDefault()).toInstant() :
+                    LocalDate.now().minusMonths(1).atStartOfDay(ZoneId.systemDefault()).toInstant();
+        }
+
+        List<Transaction> txns = transactionRepository.findStatement(account.getId(), startTs, endTs);
 
         if (type != null && !type.isBlank()) {
-            TxnType t = TxnType.valueOf(type.trim().toUpperCase());
-            txns = txns.stream().filter(x -> x.getTxnType() == t).toList();
+            TxnType t = TxnType.valueOf(type.toUpperCase());
+            return txns.stream().filter(x -> x.getTxnType() == t).map(this::toResponse).toList();
         }
 
         return txns.stream().map(this::toResponse).toList();
     }
 
-    // ---------------- helpers ----------------
+    // ---------------- Helpers ----------------
+
+    private String generateTxnRef(String accNo, String prefix) {
+        String date = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        // Use last 4 digits of account for the ref
+        String suffix = accNo.substring(accNo.length() - 4);
+        return String.format("%s-%s-%s-%04d", prefix, date, suffix, (System.currentTimeMillis() % 10000));
+    }
+
+    private void createLedgerEntry(Transaction t, UUID accId, LedgerEntryType type, BigDecimal amt, BigDecimal bal) {
+        ledgerEntryRepository.save(LedgerEntry.builder()
+                .transactionId(t.getId())
+                .accountId(accId)
+                .entryType(type)
+                .amount(amt)
+                .runningBalance(bal)
+                .postedAt(Instant.now())
+                .build());
+    }
+
+    private void validateOwnership(User user, Account account) {
+        Customer customer = customerRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("Customer profile not found"));
+        if (!account.getCustomerId().equals(customer.getId())) {
+            throw new RuntimeException("Access Denied: You do not own this account");
+        }
+    }
+
+    private User getCurrentUser() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByUsername(username).orElseThrow();
+    }
 
     private BigDecimal validateAmount(BigDecimal amt) {
-        if (amt == null || amt.signum() <= 0) throw new RuntimeException("amount must be > 0");
+        if (amt == null || amt.signum() <= 0) throw new RuntimeException("Amount must be greater than zero");
         return amt;
     }
 
     private void validateAccountActive(Account a) {
-        if (a.getStatus() != AccountStatus.ACTIVE) {
-            throw new RuntimeException("Account is not ACTIVE");
-        }
-    }
-
-    private Account loadOwnedAccount(User user, UUID accountId) {
-        Customer customer = customerRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new RuntimeException("Customer not found for user"));
-
-        Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new RuntimeException("Account not found: " + accountId));
-
-        if (!account.getCustomerId().equals(customer.getId())) {
-            throw new RuntimeException("You cannot access other customer's account");
-        }
-        return account;
-    }
-
-    private User getCurrentUser() {
-        String username = org.springframework.security.core.context.SecurityContextHolder.getContext()
-                .getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found: " + username));
+        if (a.getStatus() != AccountStatus.ACTIVE) throw new RuntimeException("Account is not ACTIVE");
     }
 
     private TxnResponse toResponse(Transaction t) {
+        // Find account numbers for the response mapping
+        String fromNo = t.getFromAccountId() != null ?
+                accountRepository.findById(t.getFromAccountId()).map(Account::getAccountNo).orElse("N/A") : null;
+        String toNo = t.getToAccountId() != null ?
+                accountRepository.findById(t.getToAccountId()).map(Account::getAccountNo).orElse("N/A") : null;
+
         return TxnResponse.builder()
-                .id(t.getId())
                 .txnRef(t.getTxnRef())
                 .txnType(t.getTxnType().name())
                 .status(t.getStatus().name())
                 .amount(t.getAmount())
-                .fromAccountId(t.getFromAccountId())
-                .toAccountId(t.getToAccountId())
+                .fromAccountNo(fromNo)
+                .toAccountNo(toNo)
                 .requestedAt(t.getRequestedAt())
                 .postedAt(t.getPostedAt())
+                .narration(t.getNarration())
                 .failureReason(t.getFailureReason())
                 .build();
     }
