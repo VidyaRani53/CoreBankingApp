@@ -1,0 +1,14 @@
+package com.banksphere.controller;
+
+import com.banksphere.dto.ApiResponse;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class HealthController {
+
+    @GetMapping("/api/health")
+    public ApiResponse<String> health() {
+        return ApiResponse.ok("Service is up", "BankSphere Backend is running");
+    }
+}
