@@ -7,30 +7,23 @@ import lombok.Data;
 @Data
 public class CreateBranchRequest {
 
-    @NotBlank
-    @Size(max = 20)
-    private String branchCode;
-
-    @NotBlank
+    @NotBlank(message = "Branch name is required")
     @Size(max = 120)
     private String name;
 
-    @Size(max = 20)
-    private String ifsc; // optional
-
-    @NotBlank
+    @NotBlank(message = "Address is required")
     @Size(max = 255)
     private String addressLine1;
 
-    @NotBlank
+    @NotBlank(message = "City is required")
     @Size(max = 80)
     private String city;
 
-    @NotBlank
+    @NotBlank(message = "State is required")
     @Size(max = 80)
     private String state;
 
-    @NotBlank
+    @NotBlank(message = "Pincode is required")
     @Size(max = 12)
     private String pincode;
 }

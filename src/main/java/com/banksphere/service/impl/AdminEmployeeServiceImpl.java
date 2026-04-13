@@ -2,23 +2,21 @@ package com.banksphere.service.impl;
 
 import com.banksphere.dto.employee.CreateEmployeeRequest;
 import com.banksphere.dto.employee.CreateEmployeeResponse;
+import com.banksphere.dto.employee.EmployeeResponse;
 import com.banksphere.dto.employee.ResetPasswordResponse;
-import com.banksphere.entity.Employee;
-import com.banksphere.entity.Role;
-import com.banksphere.entity.User;
-import com.banksphere.repository.BranchRepository;
-import com.banksphere.repository.EmployeeRepository;
-import com.banksphere.repository.RoleRepository;
-import com.banksphere.repository.UserRepository;
+import com.banksphere.entity.*;
+import com.banksphere.repository.*;
 import com.banksphere.service.AdminEmployeeService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.banksphere.dto.employee.EmployeeResponse;
-import java.util.*;
-import java.security.SecureRandom;
 
+import java.security.SecureRandom;
+import java.util.*;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AdminEmployeeServiceImpl implements AdminEmployeeService {
@@ -35,16 +33,22 @@ public class AdminEmployeeServiceImpl implements AdminEmployeeService {
     @Override
     @Transactional
     public CreateEmployeeResponse createEmployee(CreateEmployeeRequest request) {
-
         String username = request.getUsername().trim();
+
+        // 1. Validate Username
         if (userRepository.existsByUsername(username)) {
-            throw new RuntimeException("Username already exists");
+            throw new RuntimeException("Username already exists: " + username);
         }
 
-        // ensure branch exists
-        branchRepository.findById(request.getBranchId())
-                .orElseThrow(() -> new RuntimeException("Branch not found: " + request.getBranchId()));
+        // 2. Find Branch by Code
+        Branch branch = branchRepository.findByBranchCode(request.getBranchCode().trim())
+                .orElseThrow(() -> new RuntimeException("Branch not found with code: " + request.getBranchCode()));
 
+        // 3. Generate Sequential Employee Number (e.g., BR0001-001)
+        long currentEmpCount = employeeRepository.countByBranchId(branch.getId());
+        String generatedEmpNo = String.format("%s-%03d", branch.getBranchCode(), currentEmpCount + 1);
+
+        // 4. Map Designation to Security Role
         String designation = request.getDesignation().trim().toUpperCase();
         String roleName = switch (designation) {
             case "CSR" -> "ROLE_CSR";
@@ -53,34 +57,38 @@ public class AdminEmployeeServiceImpl implements AdminEmployeeService {
         };
 
         Role role = roleRepository.findByName(roleName)
-                .orElseThrow(() -> new RuntimeException(roleName + " not found. Seed roles first."));
+                .orElseThrow(() -> new RuntimeException(roleName + " not found. Please seed roles in DB first."));
 
+        // 5. Create User Entity
         String tempPassword = generateTempPassword(12);
-
         User user = User.builder()
                 .username(username)
                 .passwordHash(passwordEncoder.encode(tempPassword))
                 .userType("EMPLOYEE")
                 .status("ACTIVE")
                 .failedLoginAttempts(0)
+                .roles(new HashSet<>(Collections.singletonList(role)))
                 .build();
-        user.getRoles().add(role);
 
         User savedUser = userRepository.save(user);
 
+        // 6. Create Employee Entity
         Employee employee = Employee.builder()
                 .userId(savedUser.getId())
-                .branchId(request.getBranchId())
-                .employeeNo(request.getEmployeeNo().trim())
+                .branchId(branch.getId())
+                .employeeNo(generatedEmpNo) // This is the professional ID
                 .designation(designation)
                 .status("ACTIVE")
                 .build();
 
         Employee savedEmp = employeeRepository.save(employee);
+        log.info("Employee created successfully: {} with Business No: {}", username, generatedEmpNo);
 
+        // RETURN STATEMENT UPDATED HERE
         return CreateEmployeeResponse.builder()
                 .userId(savedUser.getId())
                 .employeeId(savedEmp.getId())
+                .employeeNo(savedEmp.getEmployeeNo()) // Map the Business ID
                 .username(savedUser.getUsername())
                 .tempPassword(tempPassword)
                 .roleAssigned(roleName)
@@ -88,53 +96,35 @@ public class AdminEmployeeServiceImpl implements AdminEmployeeService {
                 .build();
     }
 
-    private String generateTempPassword(int len) {
-        StringBuilder sb = new StringBuilder(len);
-        for (int i = 0; i < len; i++) {
-            sb.append(ALPHANUM.charAt(RANDOM.nextInt(ALPHANUM.length())));
-        }
-        return sb.toString();
-    }
-
     @Override
     public List<EmployeeResponse> getAllEmployees() {
         List<Employee> employees = employeeRepository.findAll();
-
-        // collect userIds
         Set<UUID> userIds = new HashSet<>();
         for (Employee e : employees) userIds.add(e.getUserId());
 
-        // load users and map
         Map<UUID, User> userMap = new HashMap<>();
-        for (User u : userRepository.findAllById(userIds)) {
-            userMap.put(u.getId(), u);
-        }
+        userRepository.findAllById(userIds).forEach(u -> userMap.put(u.getId(), u));
 
-        List<EmployeeResponse> out = new ArrayList<>();
-        for (Employee e : employees) {
+        return employees.stream().map(e -> {
             User u = userMap.get(e.getUserId());
-            out.add(EmployeeResponse.builder()
+            return EmployeeResponse.builder()
                     .employeeId(e.getId())
                     .userId(e.getUserId())
-                    .username(u != null ? u.getUsername() : null)
+                    .username(u != null ? u.getUsername() : "UNKNOWN")
                     .employeeNo(e.getEmployeeNo())
                     .designation(e.getDesignation())
                     .status(e.getStatus())
                     .branchId(e.getBranchId())
-                    .build());
-        }
-        return out;
+                    .build();
+        }).toList();
     }
 
     @Override
     @Transactional
     public ResetPasswordResponse resetPassword(String username) {
-        String u = username.trim();
+        User user = userRepository.findByUsername(username.trim())
+                .orElseThrow(() -> new RuntimeException("User not found: " + username));
 
-        User user = userRepository.findByUsername(u)
-                .orElseThrow(() -> new RuntimeException("User not found: " + u));
-
-        // allow reset only for employees (optional but recommended)
         if (!"EMPLOYEE".equalsIgnoreCase(user.getUserType())) {
             throw new RuntimeException("Password reset allowed only for EMPLOYEE users");
         }
@@ -147,5 +137,13 @@ public class AdminEmployeeServiceImpl implements AdminEmployeeService {
                 .username(user.getUsername())
                 .tempPassword(tempPassword)
                 .build();
+    }
+
+    private String generateTempPassword(int len) {
+        StringBuilder sb = new StringBuilder(len);
+        for (int i = 0; i < len; i++) {
+            sb.append(ALPHANUM.charAt(RANDOM.nextInt(ALPHANUM.length())));
+        }
+        return sb.toString();
     }
 }

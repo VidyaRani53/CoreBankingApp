@@ -13,8 +13,8 @@ import java.util.UUID;
 public class AccountResponse {
     private UUID id;
     private String accountNo;
-    private UUID customerId;
-    private UUID branchId;
+    private String customerNo;  // Changed from UUID customerId
+    private String branchCode;  // Changed from UUID branchId
     private AccountType accountType;
     private String status;
     private String currency;

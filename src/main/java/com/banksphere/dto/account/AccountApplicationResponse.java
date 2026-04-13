@@ -12,8 +12,8 @@ import java.util.UUID;
 @Builder
 public class AccountApplicationResponse {
     private UUID id;
-    private UUID customerId;
-    private UUID preferredBranchId;
+    private String customerNo;        // Changed from UUID customerId
+    private String preferredBranchCode; // Changed from UUID preferredBranchId
     private AccountType accountType;
     private BigDecimal initialDeposit;
     private String status;

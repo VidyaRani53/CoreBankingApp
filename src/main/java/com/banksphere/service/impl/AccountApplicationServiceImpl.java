@@ -7,6 +7,7 @@ import com.banksphere.repository.*;
 import com.banksphere.service.AccountApplicationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,10 +23,10 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
 
     private final AccountApplicationRepository accountApplicationRepository;
     private final AccountRepository accountRepository;
-
     private final UserRepository userRepository;
     private final CustomerRepository customerRepository;
     private final EmployeeRepository employeeRepository;
+    private final BranchRepository branchRepository;
 
     @Override
     @Transactional
@@ -33,24 +34,25 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
         User user = getCurrentUser();
 
         if (!"CUSTOMER".equalsIgnoreCase(user.getUserType())) {
-            throw new RuntimeException("Only CUSTOMER can submit account application");
+            throw new RuntimeException("Access Denied: Only CUSTOMER can submit account applications");
         }
 
         Customer customer = customerRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new RuntimeException("Customer not found for userId=" + user.getId()));
+                .orElseThrow(() -> new RuntimeException("Customer profile not found for user: " + user.getUsername()));
 
-        // optional rule (recommended): require KYC APPROVED before applying
-        // If you want to allow apply before KYC, comment this block.
         if (!"APPROVED".equalsIgnoreCase(customer.getKycStatus())) {
-            throw new RuntimeException("KYC must be APPROVED to submit account application");
+            throw new RuntimeException("Compliance Error: KYC must be APPROVED before opening an account");
         }
 
+        Branch branch = branchRepository.findByBranchCode(request.getPreferredBranchCode().trim())
+                .orElseThrow(() -> new RuntimeException("Invalid Branch Code: " + request.getPreferredBranchCode()));
+
         BigDecimal initialDeposit = request.getInitialDeposit() == null ? BigDecimal.ZERO : request.getInitialDeposit();
-        if (initialDeposit.signum() < 0) throw new RuntimeException("initialDeposit must be >= 0");
+        if (initialDeposit.signum() < 0) throw new RuntimeException("Validation Error: initialDeposit cannot be negative");
 
         AccountApplication app = AccountApplication.builder()
                 .customerId(customer.getId())
-                .preferredBranchId(request.getPreferredBranchId())
+                .preferredBranchId(branch.getId())
                 .accountType(request.getAccountType())
                 .initialDeposit(initialDeposit)
                 .nomineeName(request.getNomineeName())
@@ -63,9 +65,7 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
                 .build();
 
         AccountApplication saved = accountApplicationRepository.save(app);
-
-        log.info("Account application submitted: appId={}, customerId={}, preferredBranchId={}, type={}",
-                saved.getId(), saved.getCustomerId(), saved.getPreferredBranchId(), saved.getAccountType());
+        log.info("Application {} submitted by customer {}", saved.getId(), customer.getCustomerNo());
 
         return toResponse(saved);
     }
@@ -74,9 +74,8 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
     @Transactional(readOnly = true)
     public List<AccountApplicationResponse> myApplications() {
         User user = getCurrentUser();
-
         Customer customer = customerRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new RuntimeException("Customer not found for userId=" + user.getId()));
+                .orElseThrow(() -> new RuntimeException("Customer profile not found"));
 
         return accountApplicationRepository.findByCustomerIdOrderBySubmittedAtDesc(customer.getId())
                 .stream().map(this::toResponse).toList();
@@ -86,47 +85,38 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
     @Transactional(readOnly = true)
     public List<AccountApplicationResponse> pendingForMyBranch() {
         User user = getCurrentUser();
-
         Employee employee = employeeRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new RuntimeException("Employee not found for userId=" + user.getId()));
-
-        UUID branchId = employee.getBranchId();
+                .orElseThrow(() -> new RuntimeException("Employee profile missing"));
 
         return accountApplicationRepository
-                .findByPreferredBranchIdAndStatusOrderBySubmittedAtDesc(branchId, ApplicationStatus.SUBMITTED)
+                .findByPreferredBranchIdAndStatusOrderBySubmittedAtDesc(employee.getBranchId(), ApplicationStatus.SUBMITTED)
                 .stream().map(this::toResponse).toList();
     }
 
     @Override
     @Transactional
     public AccountResponse approve(UUID applicationId, ApplicationReviewRequest request) {
-        User user = getCurrentUser();
-
-        if (!"EMPLOYEE".equalsIgnoreCase(user.getUserType()) && !"ADMIN".equalsIgnoreCase(user.getUserType())) {
-            throw new RuntimeException("Only EMPLOYEE/ADMIN can approve account application");
-        }
-
-        Employee employee = employeeRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new RuntimeException("Employee not found for userId=" + user.getId()));
+        User reviewer = getCurrentUser();
+        Employee employee = employeeRepository.findByUserId(reviewer.getId())
+                .orElseThrow(() -> new RuntimeException("Employee profile missing"));
 
         AccountApplication app = accountApplicationRepository.findById(applicationId)
-                .orElseThrow(() -> new RuntimeException("Application not found: " + applicationId));
+                .orElseThrow(() -> new RuntimeException("Application not found"));
 
         if (app.getStatus() != ApplicationStatus.SUBMITTED) {
-            throw new RuntimeException("Application is not in SUBMITTED state");
+            throw new RuntimeException("State Error: Application is already processed");
         }
 
-        // Branch authorization: CSR can approve only for their branch
         if (!employee.getBranchId().equals(app.getPreferredBranchId())) {
-            throw new RuntimeException("You cannot approve applications for other branches");
+            throw new RuntimeException("Security Error: Branch mismatch for approval");
         }
 
         Customer customer = customerRepository.findById(app.getCustomerId())
-                .orElseThrow(() -> new RuntimeException("Customer not found: " + app.getCustomerId()));
+                .orElseThrow(() -> new RuntimeException("Customer record missing"));
 
-        // Mandatory rule you asked in spec:
+        // Mandatory check for compliance
         if (!"APPROVED".equalsIgnoreCase(customer.getKycStatus())) {
-            throw new RuntimeException("Customer KYC must be APPROVED before account creation");
+            throw new RuntimeException("Approval Blocked: Customer KYC is no longer approved");
         }
 
         String accountNo = generateAccountNo(app.getPreferredBranchId());
@@ -138,75 +128,73 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
                 .accountType(app.getAccountType())
                 .status(AccountStatus.ACTIVE)
                 .currency("INR")
-                .availableBalance(app.getInitialDeposit() == null ? BigDecimal.ZERO : app.getInitialDeposit())
+                .availableBalance(app.getInitialDeposit())
                 .openedAt(Instant.now())
                 .build();
 
-        Account savedAccount = accountRepository.save(account);
+        accountRepository.save(account);
 
         app.setStatus(ApplicationStatus.APPROVED);
-        app.setReviewedByUserId(user.getId());
+        app.setReviewedByUserId(reviewer.getId());
         app.setReviewedAt(Instant.now());
         app.setRemarks(request.getComment());
         accountApplicationRepository.save(app);
 
-        log.info("Account application approved: appId={}, accountId={}, accountNo={}, customerId={}, branchId={}",
-                app.getId(), savedAccount.getId(), savedAccount.getAccountNo(), customer.getId(), savedAccount.getBranchId());
+        log.info("Account {} created for customer {}", accountNo, customer.getCustomerNo());
 
-        return toAccountResponse(savedAccount);
+        return toAccountResponse(account);
     }
 
     @Override
     @Transactional
     public AccountApplicationResponse reject(UUID applicationId, ApplicationReviewRequest request) {
-        User user = getCurrentUser();
-
-        Employee employee = employeeRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new RuntimeException("Employee not found for userId=" + user.getId()));
+        User reviewer = getCurrentUser();
+        Employee employee = employeeRepository.findByUserId(reviewer.getId())
+                .orElseThrow(() -> new RuntimeException("Employee profile missing"));
 
         AccountApplication app = accountApplicationRepository.findById(applicationId)
-                .orElseThrow(() -> new RuntimeException("Application not found: " + applicationId));
-
-        if (app.getStatus() != ApplicationStatus.SUBMITTED) {
-            throw new RuntimeException("Application is not in SUBMITTED state");
-        }
+                .orElseThrow(() -> new RuntimeException("Application not found"));
 
         if (!employee.getBranchId().equals(app.getPreferredBranchId())) {
-            throw new RuntimeException("You cannot reject applications for other branches");
+            throw new RuntimeException("Security Error: Branch mismatch");
         }
 
         app.setStatus(ApplicationStatus.REJECTED);
-        app.setReviewedByUserId(user.getId());
+        app.setReviewedByUserId(reviewer.getId());
         app.setReviewedAt(Instant.now());
         app.setRemarks(request.getComment());
-        AccountApplication saved = accountApplicationRepository.save(app);
 
-        log.info("Account application rejected: appId={}, byUserId={}", saved.getId(), user.getId());
-
-        return toResponse(saved);
+        return toResponse(accountApplicationRepository.save(app));
     }
 
-    // ---------------- helpers ----------------
+    // ---------------- Finalized Helpers ----------------
 
     private User getCurrentUser() {
-        // Use your existing pattern. If you have a SecurityUtil, replace this accordingly.
-        String username = org.springframework.security.core.context.SecurityContextHolder.getContext()
-                .getAuthentication().getName();
-
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found: " + username));
+                .orElseThrow(() -> new RuntimeException("User session not found"));
     }
 
     private String generateAccountNo(UUID branchId) {
-        // Simple unique demo-friendly generation; later we can add branchCode prefix.
-        return "AC-" + System.currentTimeMillis();
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new RuntimeException("Internal Error: Branch context missing"));
+        return String.format("%s-%d", branch.getBranchCode(), System.currentTimeMillis() % 100000000L);
     }
 
+    /**
+     * Maps Application Entity to Response with Branch Code and Customer No
+     */
     private AccountApplicationResponse toResponse(AccountApplication a) {
+        Customer customer = customerRepository.findById(a.getCustomerId())
+                .orElseThrow(() -> new RuntimeException("Internal mapping error: Customer not found"));
+
+        Branch branch = branchRepository.findById(a.getPreferredBranchId())
+                .orElseThrow(() -> new RuntimeException("Internal mapping error: Branch not found"));
+
         return AccountApplicationResponse.builder()
                 .id(a.getId())
-                .customerId(a.getCustomerId())
-                .preferredBranchId(a.getPreferredBranchId())
+                .customerNo(customer.getCustomerNo())
+                .preferredBranchCode(branch.getBranchCode())
                 .accountType(a.getAccountType())
                 .initialDeposit(a.getInitialDeposit())
                 .status(a.getStatus().name())
@@ -217,12 +205,21 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
                 .build();
     }
 
+    /**
+     * Maps Final Account Entity to Response with Branch Code and Customer No
+     */
     private AccountResponse toAccountResponse(Account acc) {
+        Customer customer = customerRepository.findById(acc.getCustomerId())
+                .orElseThrow(() -> new RuntimeException("Internal mapping error: Customer not found"));
+
+        Branch branch = branchRepository.findById(acc.getBranchId())
+                .orElseThrow(() -> new RuntimeException("Internal mapping error: Branch not found"));
+
         return AccountResponse.builder()
                 .id(acc.getId())
                 .accountNo(acc.getAccountNo())
-                .customerId(acc.getCustomerId())
-                .branchId(acc.getBranchId())
+                .customerNo(customer.getCustomerNo())
+                .branchCode(branch.getBranchCode())
                 .accountType(acc.getAccountType())
                 .status(acc.getStatus().name())
                 .currency(acc.getCurrency())

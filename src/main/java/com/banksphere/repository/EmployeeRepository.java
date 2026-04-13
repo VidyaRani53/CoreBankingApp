@@ -8,4 +8,5 @@ import java.util.UUID;
 
 public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
     Optional<Employee> findByUserId(UUID userId);
+    long countByBranchId(java.util.UUID branchId);
 }
