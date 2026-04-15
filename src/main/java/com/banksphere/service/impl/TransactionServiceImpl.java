@@ -84,13 +84,13 @@ public class TransactionServiceImpl implements TransactionService {
             throw new RuntimeException("Cannot transfer to the same account");
         }
 
-        // Security: Customers can only transfer from their own accounts
         if ("CUSTOMER".equalsIgnoreCase(user.getUserType())) {
             validateOwnership(user, from);
         }
 
         validateAccountActive(from);
         validateAccountActive(to);
+
         BigDecimal amount = validateAmount(request.getAmount());
 
         String txnRef = generateTxnRef(from.getAccountNo(), "TRF");
@@ -98,7 +98,6 @@ public class TransactionServiceImpl implements TransactionService {
         Transaction txn = Transaction.builder()
                 .txnRef(txnRef)
                 .txnType(TxnType.TRANSFER)
-                .status(TxnStatus.PENDING)
                 .amount(amount)
                 .fromAccountId(from.getId())
                 .toAccountId(to.getId())
@@ -107,24 +106,42 @@ public class TransactionServiceImpl implements TransactionService {
                 .requestedAt(Instant.now())
                 .build();
 
-        if (from.getAvailableBalance().compareTo(amount) < 0) {
+        // ✅ NEW: High-value rule
+        if ("CUSTOMER".equalsIgnoreCase(user.getUserType())
+                && amount.compareTo(new BigDecimal(100000)) > 0) {
+
+            txn.setStatus(TxnStatus.PENDING_APPROVAL);
+            return toResponse(transactionRepository.save(txn));
+        }
+
+        // Normal flow
+        return postTransfer(txn, from, to);
+    }
+
+    private TxnResponse postTransfer(Transaction txn, Account from, Account to) {
+
+        if (from.getAvailableBalance().compareTo(txn.getAmount()) < 0) {
             txn.setStatus(TxnStatus.FAILED);
             txn.setFailureReason("Insufficient funds");
             return toResponse(transactionRepository.save(txn));
         }
 
-        from.setAvailableBalance(from.getAvailableBalance().subtract(amount));
-        to.setAvailableBalance(to.getAvailableBalance().add(amount));
+        from.setAvailableBalance(from.getAvailableBalance().subtract(txn.getAmount()));
+        to.setAvailableBalance(to.getAvailableBalance().add(txn.getAmount()));
+
         accountRepository.save(from);
         accountRepository.save(to);
 
-        Instant now = Instant.now();
         txn.setStatus(TxnStatus.POSTED);
-        txn.setPostedAt(now);
+        txn.setPostedAt(Instant.now());
+
         Transaction saved = transactionRepository.save(txn);
 
-        createLedgerEntry(saved, from.getId(), LedgerEntryType.DEBIT, amount, from.getAvailableBalance());
-        createLedgerEntry(saved, to.getId(), LedgerEntryType.CREDIT, amount, to.getAvailableBalance());
+        createLedgerEntry(saved, from.getId(), LedgerEntryType.DEBIT,
+                txn.getAmount(), from.getAvailableBalance());
+
+        createLedgerEntry(saved, to.getId(), LedgerEntryType.CREDIT,
+                txn.getAmount(), to.getAvailableBalance());
 
         return toResponse(saved);
     }
@@ -218,6 +235,7 @@ public class TransactionServiceImpl implements TransactionService {
                 accountRepository.findById(t.getToAccountId()).map(Account::getAccountNo).orElse("N/A") : null;
 
         return TxnResponse.builder()
+                .id(t.getId())
                 .txnRef(t.getTxnRef())
                 .txnType(t.getTxnType().name())
                 .status(t.getStatus().name())
@@ -230,4 +248,59 @@ public class TransactionServiceImpl implements TransactionService {
                 .failureReason(t.getFailureReason())
                 .build();
     }
+    @Override
+    @Transactional(readOnly = true)
+    public List<TxnResponse> getPendingHighValueTxns() {
+        return transactionRepository
+                .findByStatus(TxnStatus.PENDING_APPROVAL)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public TxnResponse approveHighValueTxn(UUID txnId) {
+
+        User csr = getCurrentUser();
+
+        Transaction txn = transactionRepository.findById(txnId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+
+        if (txn.getStatus() != TxnStatus.PENDING_APPROVAL) {
+            throw new RuntimeException("Transaction not pending approval");
+        }
+
+        Account from = accountRepository.findById(txn.getFromAccountId()).orElseThrow();
+        Account to = accountRepository.findById(txn.getToAccountId()).orElseThrow();
+
+        TxnResponse response = postTransfer(txn, from, to);
+
+        txn.setApprovedBy(csr.getId());
+        txn.setApprovedAt(Instant.now());
+
+        return response;
+    }
+
+    @Override
+    @Transactional
+    public TxnResponse rejectHighValueTxn(UUID txnId, String reason) {
+
+        User csr = getCurrentUser();
+
+        Transaction txn = transactionRepository.findById(txnId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+
+        if (txn.getStatus() != TxnStatus.PENDING_APPROVAL) {
+            throw new RuntimeException("Transaction not pending approval");
+        }
+
+        txn.setStatus(TxnStatus.REJECTED);
+        txn.setFailureReason(reason);
+        txn.setApprovedBy(csr.getId());
+        txn.setApprovedAt(Instant.now());
+
+        return toResponse(transactionRepository.save(txn));
+    }
+
 }

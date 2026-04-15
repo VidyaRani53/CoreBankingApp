@@ -2,5 +2,9 @@
 package com.banksphere.entity.enums;
 
 public enum TxnStatus {
-    PENDING, POSTED, FAILED, REVERSED
+    PENDING,
+    PENDING_APPROVAL,
+    POSTED,
+    FAILED,
+    REJECTED
 }

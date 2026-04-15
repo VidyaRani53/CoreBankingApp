@@ -10,11 +10,17 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "accounts",
+@Table(
+        name = "accounts",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_accounts_account_no", columnNames = "account_no")
-        })
-@Getter @Setter
+                @UniqueConstraint(
+                        name = "uk_accounts_account_no",
+                        columnNames = "account_no"
+                )
+        }
+)
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -32,6 +38,10 @@ public class Account {
 
     @Column(name = "branch_id", nullable = false)
     private UUID branchId;
+
+    // ✅ ADDED
+    @Column(name = "branch_code", nullable = false, length = 20)
+    private String branchCode;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "account_type", nullable = false)

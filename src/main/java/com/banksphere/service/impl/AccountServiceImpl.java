@@ -54,6 +54,7 @@ public class AccountServiceImpl implements AccountService {
                 .accountNo(generatedAccountNo)
                 .customerId(customer.getId())
                 .branchId(branch.getId())
+                .branchCode(branch.getBranchCode())
                 .accountType(request.getAccountType())
                 .status(AccountStatus.ACTIVE)
                 .currency("INR")
@@ -108,4 +109,10 @@ public class AccountServiceImpl implements AccountService {
                 .openedAt(a.getOpenedAt())
                 .build();
     }
+
+
+
+
+
+
 }

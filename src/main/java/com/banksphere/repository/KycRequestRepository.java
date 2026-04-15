@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 import java.util.UUID;
 
-public interface KycRequestRepository extends JpaRepository<KycRequest, UUID> {
+public interface KycRequestRepository extends JpaRepository<KycRequest, Long> {
 
     List<KycRequest> findByCustomerIdOrderByCreatedAtDesc(UUID customerId);
 

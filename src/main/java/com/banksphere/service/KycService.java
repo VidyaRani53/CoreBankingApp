@@ -11,5 +11,5 @@ public interface KycService {
     KycResponse submit(KycSubmitRequest request);
     List<KycResponse> myHistory();
     List<KycResponse> inbox();
-    KycResponse review(UUID kycRequestId, KycReviewRequest request);
+    KycResponse review(Long kycRequestId, KycReviewRequest request);
 }

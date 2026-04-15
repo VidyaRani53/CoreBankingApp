@@ -27,7 +27,7 @@ public class EmployeeKycController {
 
     @PreAuthorize("hasAuthority('ROLE_CSR') or hasAuthority('ROLE_BRANCH_MANAGER')")
     @PatchMapping("/{id}/review")
-    public ApiResponse<KycResponse> review(@PathVariable("id") UUID id,
+    public ApiResponse<KycResponse> review(@PathVariable("id") Long id,
                                            @Valid @RequestBody KycReviewRequest request) {
         return ApiResponse.ok("KYC reviewed", kycService.review(id, request));
     }

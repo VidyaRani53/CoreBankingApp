@@ -20,8 +20,8 @@ import java.util.UUID;
 public class KycRequest {
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(name = "customer_id", nullable = false)
     private UUID customerId;

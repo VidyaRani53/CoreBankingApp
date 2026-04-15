@@ -30,8 +30,15 @@ public class User {
     @Column(nullable = false, length = 20)
     private String userType; // CUSTOMER / EMPLOYEE / ADMIN
 
+
     @Column(nullable = false, length = 20)
     private String status; // ACTIVE / LOCKED / DISABLED
+
+
+    @Column(name = "branch_code", length = 20)
+    private String branchCode;
+
+
 
     @Column(nullable = false)
     private Integer failedLoginAttempts;
