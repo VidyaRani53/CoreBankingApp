@@ -31,6 +31,7 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
     @Override
     @Transactional
     public AccountApplicationResponse submit(AccountApplicationSubmitRequest request) {
+
         User user = getCurrentUser();
 
         if (!"CUSTOMER".equalsIgnoreCase(user.getUserType())) {
@@ -38,16 +39,21 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
         }
 
         Customer customer = customerRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new RuntimeException(
-                        "Customer profile not found for user: " + user.getUsername()));
+                .orElseThrow(() ->
+                        new RuntimeException("Customer profile not found for user: " + user.getUsername()));
+
+        // ✅ NEW: Block INACTIVE customers
+        if (!"ACTIVE".equalsIgnoreCase(customer.getStatus())) {
+            throw new RuntimeException("Account application not allowed: Customer is INACTIVE");
+        }
 
         if (!"APPROVED".equalsIgnoreCase(customer.getKycStatus())) {
             throw new RuntimeException("Compliance Error: KYC must be APPROVED before opening an account");
         }
 
         Branch branch = branchRepository.findByBranchCode(request.getPreferredBranchCode().trim())
-                .orElseThrow(() -> new RuntimeException(
-                        "Invalid Branch Code: " + request.getPreferredBranchCode()));
+                .orElseThrow(() ->
+                        new RuntimeException("Invalid Branch Code: " + request.getPreferredBranchCode()));
 
         BigDecimal initialDeposit =
                 request.getInitialDeposit() == null ? BigDecimal.ZERO : request.getInitialDeposit();
@@ -71,6 +77,7 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
                 .build();
 
         AccountApplication saved = accountApplicationRepository.save(app);
+
         log.info("Application {} submitted by customer {}", saved.getId(), customer.getCustomerNo());
 
         return toResponse(saved);
@@ -79,7 +86,9 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
     @Override
     @Transactional(readOnly = true)
     public List<AccountApplicationResponse> myApplications() {
+
         User user = getCurrentUser();
+
         Customer customer = customerRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new RuntimeException("Customer profile not found"));
 
@@ -93,7 +102,9 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
     @Override
     @Transactional(readOnly = true)
     public List<AccountApplicationResponse> pendingForMyBranch() {
+
         User user = getCurrentUser();
+
         Employee employee = employeeRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new RuntimeException("Employee profile missing"));
 
@@ -108,7 +119,9 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
     @Override
     @Transactional
     public AccountResponse approve(UUID applicationId, ApplicationReviewRequest request) {
+
         User reviewer = getCurrentUser();
+
         Employee employee = employeeRepository.findByUserId(reviewer.getId())
                 .orElseThrow(() -> new RuntimeException("Employee profile missing"));
 
@@ -126,22 +139,25 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
         Customer customer = customerRepository.findById(app.getCustomerId())
                 .orElseThrow(() -> new RuntimeException("Customer record missing"));
 
+        // ✅ NEW: Re-check customer status at approval time
+        if (!"ACTIVE".equalsIgnoreCase(customer.getStatus())) {
+            throw new RuntimeException("Approval blocked: Customer is INACTIVE");
+        }
+
         if (!"APPROVED".equalsIgnoreCase(customer.getKycStatus())) {
             throw new RuntimeException("Approval Blocked: Customer KYC is no longer approved");
         }
 
-        // ✅ FETCH BRANCH (REQUIRED FOR branchCode)
         Branch branch = branchRepository.findById(app.getPreferredBranchId())
                 .orElseThrow(() -> new RuntimeException("Branch not found"));
 
         String accountNo = generateAccountNo(branch.getId());
 
-        // ✅ FIX: branchCode ADDED
         Account account = Account.builder()
                 .accountNo(accountNo)
                 .customerId(customer.getId())
                 .branchId(branch.getId())
-                .branchCode(branch.getBranchCode()) // ✅ IMPORTANT
+                .branchCode(branch.getBranchCode())
                 .accountType(app.getAccountType())
                 .status(AccountStatus.ACTIVE)
                 .currency("INR")
@@ -165,7 +181,9 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
     @Override
     @Transactional
     public AccountApplicationResponse reject(UUID applicationId, ApplicationReviewRequest request) {
+
         User reviewer = getCurrentUser();
+
         Employee employee = employeeRepository.findByUserId(reviewer.getId())
                 .orElseThrow(() -> new RuntimeException("Employee profile missing"));
 
