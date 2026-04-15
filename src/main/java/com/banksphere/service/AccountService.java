@@ -4,6 +4,7 @@ import com.banksphere.dto.account.AccountApplicationSubmitRequest;
 import com.banksphere.dto.account.AccountResponse;
 
 import java.util.List;
+import java.util.UUID;
 
 public interface AccountService {
 
@@ -18,4 +19,20 @@ public interface AccountService {
      */
     List<AccountResponse> myAccounts();
 //    public List<AccountResponse> getAccountsForMyBranch();
+    AccountResponse getAccountById(UUID accountId);
+    List<AccountResponse> getAccountsByCustomerId(UUID customerId);
+    AccountResponse closeAccount(String accountNo);
+
+    AccountResponse freezeAccount(String accountNo);
+
+    AccountResponse unfreezeAccount(String accountNo);
+
+    List<AccountResponse> getMyBranchAccounts(
+            String status,
+            String accountType,
+            String sortBy,
+            String sortDir
+    );
+
+
 }

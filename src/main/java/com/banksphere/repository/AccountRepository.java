@@ -32,4 +32,28 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
             AccountStatus status,
             AccountType accountType
     );
+
+
+    List<Account> findByCustomerIdAndStatus(UUID customerId, AccountStatus status);
+
+    // ✅ For admin checks
+    Optional<Account> findByAccountNoAndStatusNot(String accountNo, AccountStatus status);
+
+
+    Optional<Account> findById(UUID id);
+
+    Optional<Account> findByIdAndCustomerId(UUID id, UUID customerId);
+
+    Optional<Account> findByIdAndBranchCode(UUID id, String branchCode);
+
+    // ✅ All accounts of a customer
+    List<Account> findByCustomerId(UUID customerId);
+
+    // ✅ Branch-scoped (for Branch Manager)
+    List<Account> findByCustomerIdAndBranchCode(
+            UUID customerId,
+            String branchCode
+    );
+
+
 }

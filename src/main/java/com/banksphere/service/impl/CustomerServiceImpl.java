@@ -4,9 +4,11 @@ import com.banksphere.dto.customer.CustomerProfileUpdateRequest;
 import com.banksphere.dto.customer.CustomerResponse;
 import com.banksphere.entity.Customer;
 import com.banksphere.entity.CustomerUpdateRequest;
+import com.banksphere.entity.Employee;
 import com.banksphere.entity.User;
 import com.banksphere.repository.CustomerRepository;
 import com.banksphere.repository.CustomerUpdateRequestRepository;
+import com.banksphere.repository.EmployeeRepository;
 import com.banksphere.repository.UserRepository;
 import com.banksphere.service.CustomerService;
 import jakarta.transaction.Transactional;
@@ -26,6 +28,7 @@ public class CustomerServiceImpl implements CustomerService {
     private final UserRepository userRepository;
     private final CustomerRepository customerRepository;
     private final CustomerUpdateRequestRepository updateRequestRepository;
+    private final EmployeeRepository employeeRepository;
     @Override
     public CustomerResponse getMyProfile() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -70,6 +73,120 @@ public class CustomerServiceImpl implements CustomerService {
         updateRequestRepository.save(upd);
     }
 
+    @Override
+    public CustomerResponse deactivateCustomer(String customerNo) {
+
+        User actor = getCurrentUser();
+
+        if (!isCsrOrManager(actor)) {
+            throw new RuntimeException("Access denied: Only CSR or Branch Manager allowed");
+        }
+
+        Customer customer = customerRepository
+                .findByCustomerNoAndStatus(customerNo, "ACTIVE")
+                .orElseThrow(() -> new RuntimeException("Customer not found or already inactive"));
+
+        // ✅ Branch restriction for Branch Manager
+        if ("BRANCH_MANAGER".equalsIgnoreCase(actor.getUserType())
+                && !customer.getBranchId().equals(getUserBranchId(actor))) {
+            throw new RuntimeException("Access denied: Customer not in your branch");
+        }
+
+        customer.setStatus("INACTIVE");
+        customer.setDeactivatedAt(Instant.now());
+        customer.setDeactivatedBy(actor.getId());
+
+        return toResponse(customerRepository.save(customer));
+    }
+
+    @Override
+    public List<CustomerResponse> getCustomersInMyBranch(String status) {
+
+        User user = getCurrentUser();
+
+        // ✅ Only CSR or Branch Manager
+        if (!isCsrOrManager(user)) {
+            throw new RuntimeException("Access denied: Only CSR or Branch Manager allowed");
+        }
+
+        // ✅ Resolve branchId from Employee
+        Employee employee = employeeRepository.findByUserId(user.getId())
+                .orElseThrow(() ->
+                        new RuntimeException("Employee profile not found for user"));
+
+        UUID branchId = employee.getBranchId();
+
+        List<Customer> customers;
+
+        if (status != null) {
+            customers = customerRepository.findByBranchIdAndStatus(branchId, status.toUpperCase());
+        } else {
+            customers = customerRepository.findByBranchId(branchId);
+        }
+
+        return customers.stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+
+
+
+    // ---------------- HELPERS ----------------
+
+    private boolean isCsrOrManager(User user) {
+        return "ROLE_CSR".equalsIgnoreCase(user.getUserType())
+                || "ROLE_BRANCH_MANAGER".equalsIgnoreCase(user.getUserType());
+    }
+
+    private UUID getUserBranchId(User user) {
+
+        Employee employee = employeeRepository.findByUserId(user.getId())
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Employee profile not found for user: " + user.getUsername()
+                        ));
+
+        return employee.getBranchId();
+    }
+
+
+    private User getCurrentUser() {
+        String username = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        return userRepository.findByUsername(username).orElseThrow();
+    }
+
+    @Override
+    @Transactional
+    public CustomerResponse reactivateCustomer(String customerNo) {
+
+        User actor = getCurrentUser();
+
+        // ✅ Only CSR or Branch Manager
+        if (!isCsrOrManager(actor)) {
+            throw new RuntimeException("Access denied: Only CSR or Branch Manager allowed");
+        }
+
+        Customer customer = customerRepository
+                .findByCustomerNoAndStatus(customerNo, "INACTIVE")
+                .orElseThrow(() ->
+                        new RuntimeException("Customer not found or already active"));
+
+        // ✅ Branch Manager can restore only their branch customers
+        if ("ROLE_BRANCH_MANAGER".equalsIgnoreCase(actor.getUserType())
+                && !customer.getBranchId().equals(getUserBranchId(actor))) {
+            throw new RuntimeException("Access denied: Customer not in your branch");
+        }
+
+        customer.setStatus("ACTIVE");
+        customer.setDeactivatedAt(null);
+        customer.setDeactivatedBy(null);
+
+        return toResponse(customerRepository.save(customer));
+    }
+
+
 
 
 
@@ -88,6 +205,7 @@ public class CustomerServiceImpl implements CustomerService {
                 .state(c.getState())
                 .pincode(c.getPincode())
                 .country(c.getCountry())
+                .status(c.getStatus())
                 .kycStatus(c.getKycStatus())
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())

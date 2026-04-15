@@ -75,6 +75,15 @@ public class Customer {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "status", nullable = false, length = 20)
+    private String status; // ACTIVE / INACTIVE
+
+    @Column(name = "deactivated_at")
+    private Instant deactivatedAt;
+
+    @Column(name = "deactivated_by")
+    private UUID deactivatedBy;
+
     @PrePersist
     public void prePersist() {
         Instant now = Instant.now();

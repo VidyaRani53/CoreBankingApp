@@ -60,6 +60,12 @@ public class Account {
     @Column(name = "opened_at", nullable = false)
     private Instant openedAt;
 
+    @Column(name = "closed_at")
+    private Instant closedAt;
+
+    @Column(name = "closed_by")
+    private UUID closedBy;
+
     @Version
     @Column(name = "version", nullable = false)
     private int version;
