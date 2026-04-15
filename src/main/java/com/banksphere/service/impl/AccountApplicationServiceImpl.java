@@ -38,17 +38,23 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
         }
 
         Customer customer = customerRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new RuntimeException("Customer profile not found for user: " + user.getUsername()));
+                .orElseThrow(() -> new RuntimeException(
+                        "Customer profile not found for user: " + user.getUsername()));
 
         if (!"APPROVED".equalsIgnoreCase(customer.getKycStatus())) {
             throw new RuntimeException("Compliance Error: KYC must be APPROVED before opening an account");
         }
 
         Branch branch = branchRepository.findByBranchCode(request.getPreferredBranchCode().trim())
-                .orElseThrow(() -> new RuntimeException("Invalid Branch Code: " + request.getPreferredBranchCode()));
+                .orElseThrow(() -> new RuntimeException(
+                        "Invalid Branch Code: " + request.getPreferredBranchCode()));
 
-        BigDecimal initialDeposit = request.getInitialDeposit() == null ? BigDecimal.ZERO : request.getInitialDeposit();
-        if (initialDeposit.signum() < 0) throw new RuntimeException("Validation Error: initialDeposit cannot be negative");
+        BigDecimal initialDeposit =
+                request.getInitialDeposit() == null ? BigDecimal.ZERO : request.getInitialDeposit();
+
+        if (initialDeposit.signum() < 0) {
+            throw new RuntimeException("Validation Error: initialDeposit cannot be negative");
+        }
 
         AccountApplication app = AccountApplication.builder()
                 .customerId(customer.getId())
@@ -77,8 +83,11 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
         Customer customer = customerRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new RuntimeException("Customer profile not found"));
 
-        return accountApplicationRepository.findByCustomerIdOrderBySubmittedAtDesc(customer.getId())
-                .stream().map(this::toResponse).toList();
+        return accountApplicationRepository
+                .findByCustomerIdOrderBySubmittedAtDesc(customer.getId())
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @Override
@@ -89,8 +98,11 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
                 .orElseThrow(() -> new RuntimeException("Employee profile missing"));
 
         return accountApplicationRepository
-                .findByPreferredBranchIdAndStatusOrderBySubmittedAtDesc(employee.getBranchId(), ApplicationStatus.SUBMITTED)
-                .stream().map(this::toResponse).toList();
+                .findByPreferredBranchIdAndStatusOrderBySubmittedAtDesc(
+                        employee.getBranchId(), ApplicationStatus.SUBMITTED)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @Override
@@ -114,17 +126,22 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
         Customer customer = customerRepository.findById(app.getCustomerId())
                 .orElseThrow(() -> new RuntimeException("Customer record missing"));
 
-        // Mandatory check for compliance
         if (!"APPROVED".equalsIgnoreCase(customer.getKycStatus())) {
             throw new RuntimeException("Approval Blocked: Customer KYC is no longer approved");
         }
 
-        String accountNo = generateAccountNo(app.getPreferredBranchId());
+        // ✅ FETCH BRANCH (REQUIRED FOR branchCode)
+        Branch branch = branchRepository.findById(app.getPreferredBranchId())
+                .orElseThrow(() -> new RuntimeException("Branch not found"));
 
+        String accountNo = generateAccountNo(branch.getId());
+
+        // ✅ FIX: branchCode ADDED
         Account account = Account.builder()
                 .accountNo(accountNo)
                 .customerId(customer.getId())
-                .branchId(app.getPreferredBranchId())
+                .branchId(branch.getId())
+                .branchCode(branch.getBranchCode()) // ✅ IMPORTANT
                 .accountType(app.getAccountType())
                 .status(AccountStatus.ACTIVE)
                 .currency("INR")
@@ -167,10 +184,11 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
         return toResponse(accountApplicationRepository.save(app));
     }
 
-    // ---------------- Finalized Helpers ----------------
+    // ---------------- Helpers ----------------
 
     private User getCurrentUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        String username = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User session not found"));
     }
@@ -178,12 +196,13 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
     private String generateAccountNo(UUID branchId) {
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new RuntimeException("Internal Error: Branch context missing"));
-        return String.format("%s-%d", branch.getBranchCode(), System.currentTimeMillis() % 100000000L);
+        return String.format(
+                "%s-%d",
+                branch.getBranchCode(),
+                System.currentTimeMillis() % 100000000L
+        );
     }
 
-    /**
-     * Maps Application Entity to Response with Branch Code and Customer No
-     */
     private AccountApplicationResponse toResponse(AccountApplication a) {
         Customer customer = customerRepository.findById(a.getCustomerId())
                 .orElseThrow(() -> new RuntimeException("Internal mapping error: Customer not found"));
@@ -205,21 +224,15 @@ public class AccountApplicationServiceImpl implements AccountApplicationService 
                 .build();
     }
 
-    /**
-     * Maps Final Account Entity to Response with Branch Code and Customer No
-     */
     private AccountResponse toAccountResponse(Account acc) {
         Customer customer = customerRepository.findById(acc.getCustomerId())
                 .orElseThrow(() -> new RuntimeException("Internal mapping error: Customer not found"));
-
-        Branch branch = branchRepository.findById(acc.getBranchId())
-                .orElseThrow(() -> new RuntimeException("Internal mapping error: Branch not found"));
 
         return AccountResponse.builder()
                 .id(acc.getId())
                 .accountNo(acc.getAccountNo())
                 .customerNo(customer.getCustomerNo())
-                .branchCode(branch.getBranchCode())
+                .branchCode(acc.getBranchCode())
                 .accountType(acc.getAccountType())
                 .status(acc.getStatus().name())
                 .currency(acc.getCurrency())

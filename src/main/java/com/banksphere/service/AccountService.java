@@ -17,4 +17,5 @@ public interface AccountService {
      * Retrieves all accounts belonging to the currently authenticated customer.
      */
     List<AccountResponse> myAccounts();
+//    public List<AccountResponse> getAccountsForMyBranch();
 }

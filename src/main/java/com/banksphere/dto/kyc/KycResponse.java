@@ -9,9 +9,9 @@ import java.util.UUID;
 @Data
 @Builder
 public class KycResponse {
-    private UUID id;
-    private String customerNo; // Changed from UUID customerId
-    private String branchCode; // Changed from UUID branchId
+    private Long id;
+    private UUID customerId;
+    private UUID branchId;
     private String status;
 
     private String idType;

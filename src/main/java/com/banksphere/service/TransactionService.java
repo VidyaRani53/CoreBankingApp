@@ -10,6 +10,10 @@ public interface TransactionService {
     TxnResponse deposit(DepositRequest request);
     TxnResponse withdraw(WithdrawRequest request);
     TxnResponse transfer(TransferRequest request);
+    List<TxnResponse> getPendingHighValueTxns();
 
+    TxnResponse approveHighValueTxn(UUID txnId);
+
+    TxnResponse rejectHighValueTxn(UUID txnId, String reason);
     List<TxnResponse> getStatement(String accountNo, String interval, LocalDate from, LocalDate to, String type);
 }

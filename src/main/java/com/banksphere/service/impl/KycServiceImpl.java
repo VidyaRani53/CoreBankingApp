@@ -3,20 +3,24 @@ package com.banksphere.service.impl;
 import com.banksphere.dto.kyc.KycResponse;
 import com.banksphere.dto.kyc.KycReviewRequest;
 import com.banksphere.dto.kyc.KycSubmitRequest;
-import com.banksphere.entity.*;
-import com.banksphere.repository.*;
+import com.banksphere.entity.Customer;
+import com.banksphere.entity.Employee;
+import com.banksphere.entity.KycRequest;
+import com.banksphere.entity.User;
+import com.banksphere.repository.BranchRepository;
+import com.banksphere.repository.CustomerRepository;
+import com.banksphere.repository.EmployeeRepository;
+import com.banksphere.repository.KycRequestRepository;
+import com.banksphere.repository.UserRepository;
 import com.banksphere.service.KycService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class KycServiceImpl implements KycService {
@@ -32,12 +36,15 @@ public class KycServiceImpl implements KycService {
     public KycResponse submit(KycSubmitRequest request) {
         User currentUser = getCurrentUser();
 
+        // find customer by userId (assuming you have this method; if not, tell me)
         Customer customer = customerRepository.findByUserId(currentUser.getId())
                 .orElseThrow(() -> new RuntimeException("Customer profile not found for current user"));
 
+        UUID branchId = customer.getBranchId();
+
         KycRequest kyc = KycRequest.builder()
                 .customerId(customer.getId())
-                .branchId(customer.getBranchId())
+                .branchId(branchId)
                 .status("SUBMITTED")
                 .idType(request.getIdType().trim().toUpperCase())
                 .idNumber(request.getIdNumber().trim())
@@ -50,30 +57,30 @@ public class KycServiceImpl implements KycService {
 
         KycRequest saved = kycRequestRepository.save(kyc);
 
+        // Keep customer.kycStatus in sync with latest submission
         customer.setKycStatus("PENDING");
         customerRepository.save(customer);
 
-        log.info("KYC submitted for Customer: {}", customer.getCustomerNo());
         return toResponse(saved);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<KycResponse> myHistory() {
         User currentUser = getCurrentUser();
+
         Customer customer = customerRepository.findByUserId(currentUser.getId())
-                .orElseThrow(() -> new RuntimeException("Customer profile not found"));
+                .orElseThrow(() -> new RuntimeException("Customer profile not found for current user"));
 
         return kycRequestRepository.findByCustomerIdOrderByCreatedAtDesc(customer.getId())
                 .stream().map(this::toResponse).toList();
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<KycResponse> inbox() {
         User currentUser = getCurrentUser();
+
         Employee employee = employeeRepository.findByUserId(currentUser.getId())
-                .orElseThrow(() -> new RuntimeException("Employee profile not found"));
+                .orElseThrow(() -> new RuntimeException("Employee profile not found for current user"));
 
         List<String> statuses = List.of("SUBMITTED", "IN_REVIEW");
 
@@ -83,33 +90,39 @@ public class KycServiceImpl implements KycService {
 
     @Override
     @Transactional
-    public KycResponse review(UUID kycRequestId, KycReviewRequest request) {
+    public KycResponse review(Long kycRequestId, KycReviewRequest request) {
         User currentUser = getCurrentUser();
+
         Employee employee = employeeRepository.findByUserId(currentUser.getId())
-                .orElseThrow(() -> new RuntimeException("Employee profile not found"));
+                .orElseThrow(() -> new RuntimeException("Employee profile not found for current user"));
 
         KycRequest kyc = kycRequestRepository.findById(kycRequestId)
                 .orElseThrow(() -> new RuntimeException("KYC request not found: " + kycRequestId));
 
+        // ensure employee only reviews their own branch KYC
         if (!kyc.getBranchId().equals(employee.getBranchId())) {
-            throw new RuntimeException("Unauthorized: You cannot review KYC for another branch");
+            throw new RuntimeException("You cannot review KYC for another branch");
         }
 
         String decision = request.getDecision().trim().toUpperCase();
+        if (!decision.equals("APPROVE") && !decision.equals("REJECT")) {
+            throw new RuntimeException("decision must be APPROVE or REJECT");
+        }
+
         kyc.setStatus(decision.equals("APPROVE") ? "APPROVED" : "REJECTED");
         kyc.setReviewedByUserId(currentUser.getId());
         kyc.setReviewComment(request.getComment());
-        kyc.setReviewedAt(Instant.now());
+        kyc.setReviewedAt(java.time.Instant.now());
 
         KycRequest saved = kycRequestRepository.save(kyc);
 
+        // update customer's kycStatus too
         Customer customer = customerRepository.findById(kyc.getCustomerId())
-                .orElseThrow(() -> new RuntimeException("Customer record missing"));
+                .orElseThrow(() -> new RuntimeException("Customer not found for KYC request"));
 
-        customer.setKycStatus(kyc.getStatus());
+        customer.setKycStatus(decision.equals("APPROVE") ? "APPROVED" : "REJECTED");
         customerRepository.save(customer);
 
-        log.info("KYC {} for Customer: {} by Employee: {}", kyc.getStatus(), customer.getCustomerNo(), currentUser.getUsername());
         return toResponse(saved);
     }
 
@@ -119,22 +132,12 @@ public class KycServiceImpl implements KycService {
                 .orElseThrow(() -> new RuntimeException("User not found: " + username));
     }
 
-    /**
-     * Helper to map Entity to Response with human-readable codes
-     */
+
     private KycResponse toResponse(KycRequest k) {
-        // Fetch Customer to get customerNo
-        Customer customer = customerRepository.findById(k.getCustomerId())
-                .orElseThrow(() -> new RuntimeException("Internal Error: Customer not found for KYC"));
-
-        // Fetch Branch to get branchCode
-        Branch branch = branchRepository.findById(k.getBranchId())
-                .orElseThrow(() -> new RuntimeException("Internal Error: Branch not found for KYC"));
-
         return KycResponse.builder()
                 .id(k.getId())
-                .customerNo(customer.getCustomerNo()) // Mapped from Customer Entity
-                .branchCode(branch.getBranchCode()) // Mapped from Branch Entity
+                .customerId(k.getCustomerId())
+                .branchId(k.getBranchId())
                 .status(k.getStatus())
                 .idType(k.getIdType())
                 .idNumber(k.getIdNumber())

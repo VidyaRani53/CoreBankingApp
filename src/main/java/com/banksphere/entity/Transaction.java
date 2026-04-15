@@ -63,6 +63,11 @@ public class Transaction {
     @Column(name = "failure_reason")
     private String failureReason;
 
+
+    private UUID approvedBy;
+    private Instant approvedAt;
+
+
     @PrePersist
     void prePersist() {
         if (requestedAt == null) requestedAt = Instant.now();

@@ -1,6 +1,7 @@
 package com.banksphere.repository;
 
 import com.banksphere.entity.Transaction;
+import com.banksphere.entity.enums.TxnStatus;
 import com.banksphere.entity.enums.TxnType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -25,4 +26,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     List<Transaction> findStatement(@Param("accId") UUID accId,
                                     @Param("start") Instant start,
                                     @Param("end") Instant end);
+
+    List<Transaction> findByStatus(TxnStatus status);
 }
