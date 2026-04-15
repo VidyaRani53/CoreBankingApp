@@ -9,5 +9,6 @@ import java.util.List;
 public interface CustomerService {
     CustomerResponse getMyProfile();
     public void requestProfileUpdate(CustomerProfileUpdateRequest request);
-
+    CustomerResponse deactivateCustomer(String customerNo);
+    List<CustomerResponse> getCustomersInMyBranch(String status);
 }

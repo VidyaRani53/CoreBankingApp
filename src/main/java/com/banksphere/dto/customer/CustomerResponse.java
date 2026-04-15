@@ -30,4 +30,6 @@ public class CustomerResponse {
 
     private Instant createdAt;
     private Instant updatedAt;
+    private String status;
+
 }
