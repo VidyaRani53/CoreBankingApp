@@ -57,6 +57,17 @@ public class CustomerController {
     }
 
 
+    @PatchMapping("/{customerNo}/reactivate")
+    @PreAuthorize("hasAnyAuthority('ROLE_CSR','ROLE_BRANCH_MANAGER')")
+    public ApiResponse<CustomerResponse> reactivateCustomer(
+            @PathVariable String customerNo) {
+
+        return ApiResponse.ok(
+                "Customer reactivated successfully",
+                customerService.reactivateCustomer(customerNo)
+        );
+    }
+
 
 
 

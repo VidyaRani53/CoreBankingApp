@@ -11,4 +11,5 @@ public interface CustomerService {
     public void requestProfileUpdate(CustomerProfileUpdateRequest request);
     CustomerResponse deactivateCustomer(String customerNo);
     List<CustomerResponse> getCustomersInMyBranch(String status);
+    CustomerResponse reactivateCustomer(String customerNo);
 }

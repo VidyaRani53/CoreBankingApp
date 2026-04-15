@@ -140,10 +140,16 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     private UUID getUserBranchId(User user) {
-        // assuming you resolve branchId via employee table
-        // adapt if you already store branchId directly
-        throw new UnsupportedOperationException("Implement branchId resolution here");
+
+        Employee employee = employeeRepository.findByUserId(user.getId())
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Employee profile not found for user: " + user.getUsername()
+                        ));
+
+        return employee.getBranchId();
     }
+
 
     private User getCurrentUser() {
         String username = SecurityContextHolder.getContext()
@@ -151,6 +157,34 @@ public class CustomerServiceImpl implements CustomerService {
         return userRepository.findByUsername(username).orElseThrow();
     }
 
+    @Override
+    @Transactional
+    public CustomerResponse reactivateCustomer(String customerNo) {
+
+        User actor = getCurrentUser();
+
+        // ✅ Only CSR or Branch Manager
+        if (!isCsrOrManager(actor)) {
+            throw new RuntimeException("Access denied: Only CSR or Branch Manager allowed");
+        }
+
+        Customer customer = customerRepository
+                .findByCustomerNoAndStatus(customerNo, "INACTIVE")
+                .orElseThrow(() ->
+                        new RuntimeException("Customer not found or already active"));
+
+        // ✅ Branch Manager can restore only their branch customers
+        if ("ROLE_BRANCH_MANAGER".equalsIgnoreCase(actor.getUserType())
+                && !customer.getBranchId().equals(getUserBranchId(actor))) {
+            throw new RuntimeException("Access denied: Customer not in your branch");
+        }
+
+        customer.setStatus("ACTIVE");
+        customer.setDeactivatedAt(null);
+        customer.setDeactivatedBy(null);
+
+        return toResponse(customerRepository.save(customer));
+    }
 
 
 
