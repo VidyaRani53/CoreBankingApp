@@ -20,14 +20,14 @@ public class StaffTransactionController {
 
     private final TransactionService transactionService;
 
-    @Operation(summary = "Deposit to account")
+    @Operation(summary = "Deposit to account(csr,branch_manager)")
     @PostMapping("/deposit")
     @PreAuthorize("hasAnyAuthority('ROLE_CSR', 'ROLE_BRANCH_MANAGER')")
     public ApiResponse<TxnResponse> deposit(@Valid @RequestBody DepositRequest request) {
         return ApiResponse.ok("Deposit successful", transactionService.deposit(request));
     }
 
-    @Operation(summary = "Get account transaction history")
+    @Operation(summary = "Get account transaction history('ROLE_ADMIN','ROLE_BRANCH_MANAGER','ROLE_CSR')")
     @GetMapping("/history/{accountNo}")
     @PreAuthorize("hasAnyAuthority('ROLE_CSR', 'ROLE_BRANCH_MANAGER', 'ROLE_ADMIN')")
     public ApiResponse<List<TxnResponse>> getAnyStatement(

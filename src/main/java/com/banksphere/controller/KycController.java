@@ -19,14 +19,14 @@ public class KycController {
 
     private final KycService kycService;
 
-    @Operation(summary = "Submit KYC")
+    @Operation(summary = "Submit KYC('ROLE_CUSTOMER')")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     @PostMapping
     public ApiResponse<KycResponse> submit(@Valid @RequestBody KycSubmitRequest request) {
         return ApiResponse.ok("KYC submitted", kycService.submit(request));
     }
 
-    @Operation(summary = "Get my KYC history")
+    @Operation(summary = "Get my KYC history('ROLE_CUSTOMER')")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     @GetMapping("/my")
     public ApiResponse<List<KycResponse>> myHistory() {

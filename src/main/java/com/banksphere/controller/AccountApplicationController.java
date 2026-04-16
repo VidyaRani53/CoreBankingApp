@@ -19,7 +19,7 @@ public class AccountApplicationController {
 
     private final AccountApplicationService accountApplicationService;
 
-    @Operation(summary = "Submit account application")
+    @Operation(summary = "Submit account application(Customer)")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     @PostMapping
     public ApiResponse<AccountApplicationResponse> submit(@Valid @RequestBody AccountApplicationSubmitRequest request) {
@@ -33,14 +33,14 @@ public class AccountApplicationController {
         return ApiResponse.ok("My account applications fetched", accountApplicationService.myApplications());
     }
 
-    @Operation(summary = "Get pending applications (my branch)")
+    @Operation(summary = "Get pending applications (my branch),(csr,branch_manager)")
     @PreAuthorize("hasAnyAuthority('ROLE_CSR','ROLE_BRANCH_MANAGER')")
     @GetMapping("/pending")
     public ApiResponse<List<AccountApplicationResponse>> pendingForMyBranch() {
         return ApiResponse.ok("Pending applications fetched", accountApplicationService.pendingForMyBranch());
     }
 
-    @Operation(summary = "Approve application (create account)")
+    @Operation(summary = "Approve application (create account),(csr,branch_manager)")
     @PreAuthorize("hasAnyAuthority('ROLE_CSR','ROLE_BRANCH_MANAGER')")
     @PostMapping("/{id}/approve")
     public ApiResponse<AccountResponse> approve(@PathVariable UUID id,
@@ -48,7 +48,7 @@ public class AccountApplicationController {
         return ApiResponse.ok("Application approved and account created", accountApplicationService.approve(id, request));
     }
 
-    @Operation(summary = "Reject application")
+    @Operation(summary = "Reject application,(csr,branch_manager)")
     @PreAuthorize("hasAnyAuthority('ROLE_CSR','ROLE_BRANCH_MANAGER')")
     @PostMapping("/{id}/reject")
     public ApiResponse<AccountApplicationResponse> reject(@PathVariable UUID id,

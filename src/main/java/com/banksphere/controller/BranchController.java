@@ -20,7 +20,7 @@ public class BranchController {
 
     private final BranchService branchService;
 
-    @Operation(summary = "Create branch")
+    @Operation(summary = "Create branch('ROLE_ADMIN')")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @PostMapping
     public ApiResponse<BranchResponse> create(@Valid @RequestBody CreateBranchRequest request) {
@@ -28,7 +28,7 @@ public class BranchController {
         return ApiResponse.ok("Branch created successfully", created);
     }
 
-    @Operation(summary = "Get all branches")
+    @Operation(summary = "Get all branches('ROLE_ADMIN')")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @GetMapping
     public ApiResponse<List<BranchResponse>> list() {
@@ -36,7 +36,7 @@ public class BranchController {
         return ApiResponse.ok("Branches fetched successfully", branches);
     }
 
-    @Operation(summary = "Update branch status")
+    @Operation(summary = "Update branch status('ROLE_ADMIN')")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @PatchMapping("/{id}/status")
     public ApiResponse<BranchResponse> updateStatus(

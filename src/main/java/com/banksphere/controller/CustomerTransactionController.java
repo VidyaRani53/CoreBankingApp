@@ -21,7 +21,7 @@ public class CustomerTransactionController {
 
     private final TransactionService transactionService;
 
-    @Operation(summary = "Transfer funds")
+    @Operation(summary = "Transfer funds('ROLE_CUSTOMER')")
     @PostMapping("/transfer")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     public ApiResponse<TxnResponse> transfer(@Valid @RequestBody TransferRequest request) {
@@ -29,7 +29,7 @@ public class CustomerTransactionController {
                 transactionService.transfer(request));
     }
 
-    @Operation(summary = "Get account statement")
+    @Operation(summary = "Get account statement('ROLE_CUSTOMER')")
     @GetMapping("/my-statement")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     public ApiResponse<List<TxnResponse>> getStatement(

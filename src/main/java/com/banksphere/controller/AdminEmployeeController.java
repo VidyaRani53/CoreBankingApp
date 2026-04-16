@@ -21,21 +21,21 @@ public class AdminEmployeeController {
 
     private final AdminEmployeeService adminEmployeeService;
 
-    @Operation(summary = "Create employee")
+    @Operation(summary = "Create employee('ROLE_ADMIN')")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @PostMapping
     public ApiResponse<CreateEmployeeResponse> create(@Valid @RequestBody CreateEmployeeRequest request) {
         return ApiResponse.ok("Employee created", adminEmployeeService.createEmployee(request));
     }
 
-    @Operation(summary = "Get all employees")
+    @Operation(summary = "Get all employees('ROLE_ADMIN')")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @GetMapping
     public ApiResponse<List<EmployeeResponse>> getAll() {
         return ApiResponse.ok("Employees fetched", adminEmployeeService.getAllEmployees());
     }
 
-    @Operation(summary = "Reset employee password")
+    @Operation(summary = "Reset employee password('ROLE_ADMIN')")
     @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     @PostMapping("/{username}/reset-password")
     public ApiResponse<ResetPasswordResponse> resetPassword(@PathVariable String username) {

@@ -18,14 +18,14 @@ public class CustomerController {
 
     private final CustomerService customerService;
 
-    @Operation(summary = "Get my customer profile")
+    @Operation(summary = "Get my customer profile('ROLE_CUSTOMER')")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     @GetMapping("/me")
     public ApiResponse<CustomerResponse> me() {
         return ApiResponse.ok("Customer profile fetched", customerService.getMyProfile());
     }
 
-    @Operation(summary = "Request profile update")
+    @Operation(summary = "Request profile update(customer)")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     @PostMapping("/profile-update")
     public ApiResponse<CustomerResponse> requestUpdate(@RequestBody CustomerProfileUpdateRequest request) {
@@ -33,7 +33,7 @@ public class CustomerController {
         return ApiResponse.ok("Profile update request submitted for approval", customerService.getMyProfile());
     }
 
-    @Operation(summary = "Deactivate customer")
+    @Operation(summary = "Deactivate customer(csr,branch_manager)")
     @PatchMapping("/{customerNo}/deactivate")
     @PreAuthorize("hasAnyAuthority('ROLE_CSR','ROLE_BRANCH_MANAGER')")
     public ApiResponse<CustomerResponse> deactivateCustomer(@PathVariable String customerNo) {
@@ -43,7 +43,7 @@ public class CustomerController {
         );
     }
 
-    @Operation(summary = "Get my branch customers")
+    @Operation(summary = "Get my branch customers(csr,branch_manager)")
     @GetMapping("/my-branch")
     @PreAuthorize("hasAnyAuthority('ROLE_CSR','ROLE_BRANCH_MANAGER')")
     public ApiResponse<List<CustomerResponse>> getCustomersInMyBranch(@RequestParam(required = false) String status) {
@@ -53,7 +53,7 @@ public class CustomerController {
         );
     }
 
-    @Operation(summary = "Reactivate customer")
+    @Operation(summary = "Reactivate customer(csr,branch_manager)")
     @PatchMapping("/{customerNo}/reactivate")
     @PreAuthorize("hasAnyAuthority('ROLE_CSR','ROLE_BRANCH_MANAGER')")
     public ApiResponse<CustomerResponse> reactivateCustomer(@PathVariable String customerNo) {

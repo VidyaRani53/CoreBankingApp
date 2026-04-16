@@ -18,14 +18,14 @@ public class AccountController {
 
     private final AccountService accountService;
 
-    @Operation(summary = "Get my accounts")
+    @Operation(summary = "Get my accounts(customer)")
     @PreAuthorize("hasAuthority('ROLE_CUSTOMER')")
     @GetMapping("/me")
     public ApiResponse<List<AccountResponse>> myAccounts() {
         return ApiResponse.ok("My accounts fetched", accountService.myAccounts());
     }
 
-    @Operation(summary = "Get account by ID")
+    @Operation(summary = "Get account by ID(any one)")
     @GetMapping("/{accountId}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_BRANCH_MANAGER','ROLE_CSR','ROLE_CUSTOMER')")
     public ApiResponse<AccountResponse> getAccountById(@PathVariable UUID accountId) {
@@ -35,9 +35,9 @@ public class AccountController {
         );
     }
 
-    @Operation(summary = "Get accounts by customer ID")
+    @Operation(summary = "Get accounts by customer ID('ROLE_ADMIN','ROLE_BRANCH_MANAGER','ROLE_CSR')")
     @GetMapping("/by-customer/{customerId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_BRANCH_MANAGER','ROLE_CSR','ROLE_CUSTOMER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_BRANCH_MANAGER','ROLE_CSR')")
     public ApiResponse<List<AccountResponse>> getAccountsByCustomerId(@PathVariable UUID customerId) {
         return ApiResponse.ok(
                 "Customer accounts fetched successfully",
@@ -45,7 +45,7 @@ public class AccountController {
         );
     }
 
-    @Operation(summary = "Get my branch accounts")
+    @Operation(summary = "Get my branch accountsROLE_BRANCH_MANAGER")
     @GetMapping("/my-branch")
     @PreAuthorize("hasAuthority('ROLE_BRANCH_MANAGER')")
     public ApiResponse<List<AccountResponse>> getMyBranchAccounts(
@@ -70,7 +70,7 @@ public class AccountController {
         );
     }
 
-    @Operation(summary = "Freeze account")
+    @Operation(summary = "Freeze account('ROLE_ADMIN','ROLE_BRANCH_MANAGER')")
     @PatchMapping("/{accountNo}/freeze")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_BRANCH_MANAGER')")
     public ApiResponse<AccountResponse> freezeAccount(@PathVariable String accountNo) {
@@ -80,7 +80,7 @@ public class AccountController {
         );
     }
 
-    @Operation(summary = "Unfreeze account")
+    @Operation(summary = "Unfreeze account('ROLE_ADMIN','ROLE_BRANCH_MANAGER')")
     @PatchMapping("/{accountNo}/unfreeze")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_BRANCH_MANAGER')")
     public ApiResponse<AccountResponse> unfreezeAccount(@PathVariable String accountNo) {
