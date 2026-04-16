@@ -25,4 +25,18 @@ public class ApiResponse<T> {
                 .data(data)
                 .build();
     }
+
+    public static ApiResponse<String> error(String message) {
+        ApiResponse<String> response = new ApiResponse<>();
+        response.setSuccess(false);   // mark as failure
+        response.setMessage(message); // include the error message
+        response.setData(null);       // no data for errors
+        return response;
+    }
+
+    private void setSuccess(boolean b) {
+
+    }
+
+
 }

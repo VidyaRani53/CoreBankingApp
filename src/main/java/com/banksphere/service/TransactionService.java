@@ -16,4 +16,6 @@ public interface TransactionService {
 
     TxnResponse rejectHighValueTxn(UUID txnId, String reason);
     List<TxnResponse> getStatement(String accountNo, String interval, LocalDate from, LocalDate to, String type);
+
+    List<TxnResponse> accountTransactions(UUID accountId, LocalDate from, LocalDate to, String type);
 }

@@ -3,6 +3,7 @@ package com.banksphere.controller;
 import com.banksphere.dto.ApiResponse;
 import com.banksphere.dto.account.AccountResponse;
 import com.banksphere.service.AdminAccountService;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -16,17 +17,7 @@ public class AdminAccountController {
 
     private final AdminAccountService adminAccountService;
 
-    /**
-     * Admin / Branch Manager can view all accounts in a branch.
-     *
-     * ADMIN  -> must pass branchCode
-     * MANAGER -> branchCode is resolved from logged-in user
-     *
-     * Optional filters:
-     *  - status (ACTIVE / INACTIVE)
-     *  - accountType (SAVINGS / CURRENT)
-     *  - sorting (accountType / openedAt)
-     */
+    @Operation(summary = "Get accounts by branch (Admin/Manager)")
     @GetMapping("/by-branch")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_BRANCH_MANAGER')")
     public ApiResponse<List<AccountResponse>> getAccountsByBranch(

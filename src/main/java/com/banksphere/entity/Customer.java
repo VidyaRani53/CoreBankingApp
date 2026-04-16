@@ -1,5 +1,6 @@
 package com.banksphere.entity;
 
+import com.banksphere.entity.enums.CustomerStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -91,6 +92,7 @@ public class Customer {
         this.updatedAt = now;
         if (this.kycStatus == null) this.kycStatus = "PENDING";
         if (this.country == null) this.country = "India";
+        if (this.status == null) this.status = String.valueOf(CustomerStatus.ACTIVE);
     }
 
     @PreUpdate

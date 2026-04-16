@@ -3,6 +3,7 @@ package com.banksphere.service.impl;
 import com.banksphere.dto.txn.*;
 import com.banksphere.entity.*;
 import com.banksphere.entity.enums.*;
+import com.banksphere.exception.InactiveAccountException;
 import com.banksphere.repository.*;
 import com.banksphere.service.TransactionService;
 import lombok.RequiredArgsConstructor;
@@ -185,6 +186,11 @@ public class TransactionServiceImpl implements TransactionService {
         return txns.stream().map(this::toResponse).toList();
     }
 
+    @Override
+    public List<TxnResponse> accountTransactions(UUID accountId, LocalDate from, LocalDate to, String type) {
+        return List.of();
+    }
+
     // ---------------- Helpers ----------------
 
     private String generateTxnRef(String accNo, String prefix) {
@@ -223,9 +229,12 @@ public class TransactionServiceImpl implements TransactionService {
         return amt;
     }
 
-    private void validateAccountActive(Account a) {
-        if (a.getStatus() != AccountStatus.ACTIVE) throw new RuntimeException("Account is not ACTIVE");
+    private void validateAccountActive(Account account) {
+        if (account.getStatus() != AccountStatus.ACTIVE) {
+            throw new InactiveAccountException("Transactions allowed only for ACTIVE accounts");
+        }
     }
+
 
     private TxnResponse toResponse(Transaction t) {
         // Find account numbers for the response mapping
@@ -302,5 +311,6 @@ public class TransactionServiceImpl implements TransactionService {
 
         return toResponse(transactionRepository.save(txn));
     }
+
 
 }

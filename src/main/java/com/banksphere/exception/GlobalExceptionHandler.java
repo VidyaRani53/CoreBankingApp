@@ -1,5 +1,6 @@
 package com.banksphere.exception;
 
+import com.banksphere.dto.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -60,4 +61,12 @@ public class GlobalExceptionHandler {
         body.put("error", ex.getMessage());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
+
+
+        @ExceptionHandler(InactiveAccountException.class)
+        public ResponseEntity<ApiResponse<String>> handleInactiveAccount(InactiveAccountException ex) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(ex.getMessage()));
+        }
+
+
 }
